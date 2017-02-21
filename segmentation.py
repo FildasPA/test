@@ -16,6 +16,7 @@ import os.path
 from pydub import AudioSegment
 
 SUMMARY_FILE = "_summary"
+CUT          = "cut"
 EXTENSION    = "mp4"
 
 
