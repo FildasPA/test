@@ -91,9 +91,9 @@ def get_segments_from_audio(segments_time,audio_origin):
 def main(argv):
 
     audio_filepath  = argv[0]                               # fichier audio d'origine
-    audio_file_name = get_file_name(audio_filepath)         # nom du fichier
-    audio_file_dir  = get_file_folder_name(audio_filepath)  # nom du dossier
-    audio_file_ext  = get_file_ext(audio_filepath)          # extension du fichier
+    audio_file_name = os.path.basename(audio_filepath)      # nom du fichier
+    audio_file_dir  = os.path.dirname(audio_filepath)       # nom du dossier
+    audio_file_ext  = os.path.splitext(audio_filepath)[1]   # extension du fichier
     summary_file    = audio_file_name + "-summary." + audio_file_ext
     segments_filepath = argv[1]
     # segments_list
