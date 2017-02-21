@@ -94,15 +94,13 @@ def main(argv):
     audio_file_name = os.path.basename(audio_filepath)      # nom du fichier
     audio_file_dir  = os.path.dirname(audio_filepath)       # nom du dossier
     audio_file_ext  = os.path.splitext(audio_filepath)[1]   # extension du fichier
-    summary_file    = audio_file_name + "-summary." + audio_file_ext
+    summary_file    = audio_file_name + "-summary" + audio_file_ext
     segments_filepath = argv[1]
-    # segments_list
 
     # print "file path: " + audio_filepath
     # print "file name: " + audio_file_name
     # print "file dir: "  + audio_file_dir
     # print "file ext:  " + audio_file_ext
-
     # print "summary file: " + summary_file
 
     # Verifie que les fichiers existent
