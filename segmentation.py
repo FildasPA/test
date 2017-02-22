@@ -30,17 +30,17 @@ into a list or into a file looking as follow:
 """
 
 # Flags
-PRINT_STEPS           = True
-PRINT_COMMANDS        = False
-PRINT_COMMANDS_OUTPUT = False
+PRINT_STEPS            = True
+PRINT_COMMANDS         = False
+PRINT_COMMANDS_OUTPUT  = False
 
-DEFAULT_FORMAT        = "mp4"
-SEGMENTS_FILES_LIST   = "._segment_files_list.txt"
-FINAL_FILE_SUFFIX     = "-summary"
-FINAL_FILE_DEST       = ""
-TEMP_DIR_PREFIX       = "._tmp_segmentation_files_"
-FFMPEG_SILENT         = "-loglevel panic"
-FORCE_OVERWRITING     = ""
+DEFAULT_FORMAT         = "mp4"
+FINAL_FILE_SUFFIX      = "-summary"
+FINAL_FILE_DESTINATION = ""
+TEMP_DIR_PREFIX        = "._tmp_segmentation_files_"
+SEGMENTS_FILES_LIST    = "segment_files_list.txt"
+FFMPEG_SILENT          = "-loglevel panic"
+FORCE_OVERWRITING      = ""
 
 
 def printerror(message):
@@ -114,18 +114,21 @@ def concat_segments(folder,number,ext,output_file):
     if PRINT_STEPS:
         print "Saving media summary into '{}'...".format(output_file)
 
-    segments = ["file '" + folder + "/cut" + str(i) + "." + ext\
-                for i in range(0,number)]
+    segments_list = folder + "_" + SEGMENTS_FILES_LIST
 
-    # print "files: " + '\n'.join(segments)
-    file = open(SEGMENTS_FILES_LIST,"w")
+    # Supprime le fichier contenant la liste des chemins vers les segments
+    if os.path.isfile(segments_list):
+        os.remove(segments_list)
+
+    segments = ["file '" + folder + "/cut" + str(i) + "." + ext\
+                for i in range(0, number)]
+
+    file = open(segments_list,"w")
     file.write('\n'.join(segments))
-    # for segment in segments:
-        # file.write(segment + "\n")
     file.close()
 
     command = 'ffmpeg -loglevel panic {force} -f concat -i {list} -c copy {output}'.\
-        format(force=FORCE_OVERWRITING,list=SEGMENTS_FILES_LIST,output=output_file)
+        format(force=FORCE_OVERWRITING,list=segments_list,output=output_file)
 
     if(PRINT_COMMANDS):
         print command
@@ -139,11 +142,14 @@ def concat_segments(folder,number,ext,output_file):
         print "Saved!"
 
     # Supprime le fichier contenant la liste des chemins vers les segments
-    if os.path.isfile(SEGMENTS_FILES_LIST):
-        os.remove(SEGMENTS_FILES_LIST)
+    if os.path.isfile(segments_list):
+        os.remove(segments_list)
+
+    # # Supprime le dossier temporaire
+    if os.path.exists(folder):
+        shutil.rmtree(folder)
 
 def main(filepath,segments_times):
-
     # Définition des variables
     filedir    = os.path.dirname(filepath)         # nom de son répertoire
     fileformat = os.path.splitext(filepath)[1][1:] # extension du fichier
@@ -153,25 +159,14 @@ def main(filepath,segments_times):
         fileformat = DEFAULT_FORMAT
         filename   = os.path.basename(filepath)
 
-    if not FINAL_FILE_DEST:
+    global FINAL_FILE_DESTINATION
+
+    if not FINAL_FILE_DESTINATION:
         FINAL_FILE_DESTINATION = filename + FINAL_FILE_SUFFIX + "." + fileformat
     tmp_dir = TEMP_DIR_PREFIX + filename
 
-    # print "file path:    " + filepath
-    # print "file name:    " + filename
-    # print "file dir:     " + filedir
-    # print "file format:  " + fileformat
-    # print "tmp dir:      " + tmp_dir
-    # print "summary file: " + FINAL_FILE_DESTINATION
-    # print "segments:\n" + str(segments_times)
-    # print "---------------------------------"
-
     # Verifie que le fichier existe
     check_file_exists(filepath)
-
-    # Lit les temps des segments à extraire
-    # segments_times = get_segments_times(segments_filepath)
-    # print segments_times
 
     # Quitte si aucun segment n'est sélectionné
     if(len(segments_times) == 0):
@@ -184,16 +179,11 @@ def main(filepath,segments_times):
     # Assemble les segments
     concat_segments(tmp_dir,number,fileformat,FINAL_FILE_DESTINATION)
 
-    # Affiche la durée totale du nouveau contenu audio
-    # print "new file duration: " + str(audio_summary.duration_seconds)
-
-    # Supprime le dossier temporaire
-    if os.path.exists(tmp_dir):
-        shutil.rmtree(tmp_dir)
 
 if __name__ == "__main__":
     """ Traite les arguments & options """
-    parser = argparse.ArgumentParser(description=DESCRIPTION,formatter_class=RawTextHelpFormatter)
+    parser = argparse.ArgumentParser(description=DESCRIPTION,
+                                     formatter_class=RawTextHelpFormatter)
     parser.add_argument('audiofile', nargs=1,
                         help='Specify the audio file')
     parser.add_argument('-f','--force', action="store_true",
@@ -232,6 +222,7 @@ if __name__ == "__main__":
         PRINT_STEPS = PRINT_COMMANDS = PRINT_COMMANDS_OUTPUT = False
     elif args['verbose']:
         PRINT_STEPS = PRINT_COMMANDS = PRINT_COMMANDS_OUTPUT = True
+        FFMPEG_SILENT = ""
 
     if args['destination']:
         FINAL_FILE_DESTINATION = args['destination']
