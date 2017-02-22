@@ -64,21 +64,23 @@ def get_segments_times(file):
 
     times = []
     for line in file:
-        line = line.split(' ')
+        line = line.strip().split(' ')
+        if not line[0]:
+            continue
         line = [float(n)/1000 for n in line]
         times.append([line[0],line[1]])
     return times
 
 def extract_segment(filepath,output_file,format,start_time,end_time):
-    """ Sauvegarde dans un fichier à part un segment du média
+    """ Sauvegarde dans un fichier à part un extrait du média
     correspondant à l'intervalle de temps specifié. """
     if PRINT_STEPS:
         print "  Extracting from {} to {} (s)...".format(start_time, end_time)
 
-    command = ("ffmpeg {silent} -i {input} -ss {start} -c copy -to {end}"
+    command = ("ffmpeg {silent} {force} -i {input} -ss {start} -c copy -to {end}"
                " -f {format} {output}").\
-        format(silent=FFMPEG_SILENT, input=filepath,
-               start=start_time, end=end_time,
+        format(silent=FFMPEG_SILENT, force=FORCE_OVERWRITING,
+               input=filepath, start=start_time, end=end_time,
                format=format, output=output_file)
 
     if(PRINT_COMMANDS):
@@ -86,12 +88,11 @@ def extract_segment(filepath,output_file,format,start_time,end_time):
 
     try:
         subprocess.check_call(command.split())
-    except subprocess.CalledProcessError as exp:
-        print('Exception caught: {}'.format(exp))
+    except subprocess.CalledProcessError as e:
+        print('Exception caught: {}'.format(e))
 
 def extract_segments(filepath,folder,ext,segments_times):
-    """ Créer un dossier temporaire et y stocke les fichiers correspondant
-    aux segments à extraire. """
+    """ Créer un dossier temporaire et y stocke les extraits. """
     if PRINT_STEPS:
         print "Extracting segments from '{}'...".format(filepath)
 
@@ -127,16 +128,17 @@ def concat_segments(folder,number,ext,output_file):
     file.write('\n'.join(segments))
     file.close()
 
-    command = 'ffmpeg -loglevel panic {force} -f concat -i {list} -c copy {output}'.\
-        format(force=FORCE_OVERWRITING,list=segments_list,output=output_file)
+    command = 'ffmpeg {silent} {force} -f concat -i {list} -c copy {output}'.\
+        format(silent=FFMPEG_SILENT,force=FORCE_OVERWRITING,
+               list=segments_list,output=output_file)
 
     if(PRINT_COMMANDS):
         print command
 
     try:
         subprocess.check_call(command.split())
-    except subprocess.CalledProcessError as exp:
-        print('Exception caught: {}'.format(exp))
+    except subprocess.CalledProcessError as e:
+        print('Exception caught: {}'.format(e))
 
     if PRINT_STEPS:
         print "Saved!"
@@ -151,8 +153,7 @@ def concat_segments(folder,number,ext,output_file):
 
 def main(filepath,segments_times):
     # Définition des variables
-    filedir    = os.path.dirname(filepath)         # nom de son répertoire
-    fileformat = os.path.splitext(filepath)[1][1:] # extension du fichier
+    fileformat = os.path.splitext(filepath)[1][1:] # extension du fichier (sans le '.')
     if fileformat:
         filename = os.path.basename(filepath).split("." + fileformat)[0]
     else:
@@ -173,10 +174,15 @@ def main(filepath,segments_times):
         printerror("No segment selected for {}!".format(filepath))
         sys.exit(1)
 
-    # Extrait et sauvegarde les segments
+    if(len(segments_times) == 1):
+        extract_segment(audio_filepath, FINAL_FILE_DESTINATION, fileformat,
+                        segments_times[0][0], segments_times[0][1])
+        return
+
+    # Extrait les segments
     number = extract_segments(audio_filepath,tmp_dir,fileformat,segments_times)
 
-    # Assemble les segments
+    # Assemble les extraits
     concat_segments(tmp_dir,number,fileformat,FINAL_FILE_DESTINATION)
 
 
@@ -202,6 +208,18 @@ if __name__ == "__main__":
                         help='Define a suffix for final file name')
     args = vars(parser.parse_args())
 
+    if args['quiet'] and args['verbose']:
+        printwarning("can't define both quiet and verbose flags as True."
+                     " Will use default flags.")
+    elif args['quiet']:
+        PRINT_STEPS = PRINT_COMMANDS = PRINT_COMMANDS_OUTPUT = False
+    elif args['verbose']:
+        PRINT_STEPS = PRINT_COMMANDS = PRINT_COMMANDS_OUTPUT = True
+        FFMPEG_SILENT = ""
+
+    if args['force']:
+        FORCE_OVERWRITING="-y"
+
     if not args['file'] and not args['list']:
         printerror("Must specify a file or a list argument containing times segments")
         sys.exit(1)
@@ -211,18 +229,6 @@ if __name__ == "__main__":
         printerror("Segments times sent as list argument isn't currently functionnal. Exit.")
         sys.exit(1)
         # segments_times = ast.literal_eval(args['list'])
-
-    if args['force']:
-        FORCE_OVERWRITING="-y"
-
-    if args['quiet'] and args['verbose']:
-        printwarning("can't define both quiet and verbose flags as True."
-                     " Will use default flags.")
-    elif args['quiet']:
-        PRINT_STEPS = PRINT_COMMANDS = PRINT_COMMANDS_OUTPUT = False
-    elif args['verbose']:
-        PRINT_STEPS = PRINT_COMMANDS = PRINT_COMMANDS_OUTPUT = True
-        FFMPEG_SILENT = ""
 
     if args['destination']:
         FINAL_FILE_DESTINATION = args['destination']
