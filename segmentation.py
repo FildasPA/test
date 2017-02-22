@@ -18,21 +18,25 @@ from argparse import RawTextHelpFormatter
 import subprocess
 
 sys.tracebacklimit    = 1
+
 # Flags
 PRINT_STEPS            = True
 PRINT_COMMANDS         = False
 PRINT_COMMANDS_OUTPUT  = False
 
 DEFAULT_FORMAT         = "mp4"
+
+FORMAT                 = ""
 OUTPUT_FILE_NAME       = ""
 OUTPUT_FILE_SUFFIX     = "-summary"
 TEMP_DIR_PREFIX        = "._tmp_segmentation_files_"
 FORCE_OVERWRITING      = ""
 
-SEGMENTS_FILES_LIST    = "segment_files_list.txt"
-EXTRACTS_NAME          = "cut"
-FFMPEG_SILENT          = "-loglevel panic"
+EXTRACTS_LIST          = "extracts.txt"
+EXTRACT_PREFIX         = "cut"
+FFMPEG_SILENT          = "-loglevel panic "
 
+SEGMENTS_TIMES         = ""
 ORIGIN_AUDIO_FILE      = ""
 TEMP_DIR               = ""
 
@@ -53,6 +57,16 @@ def printerror(message):
 def printwarning(message):
     print "Warning: {}".format(message)
 
+def execute_command(command):
+    if PRINT_COMMANDS:
+        print command
+    try:
+        subprocess.check_call(command.split())
+        return True
+    except subprocess.CalledProcessError as e:
+        print('Exception caught: {}'.format(e))
+        return False
+
 def read_segments_times(file):
     """ Retourne une liste à partir du fichier contenant les
     intervalles de temps des segments à extraire. """
@@ -65,128 +79,111 @@ def read_segments_times(file):
         if not line[0]:
             continue
         line = [float(n)/1000 for n in line]
-        times.append([line[0],line[1]])
+        times.append({'start': line[0],'end': line[1]})
     return times
 
-def extract_segment(filepath,output_file,format,start_time,end_time):
+def extract_segment(output_file, start_time, end_time):
     """ Sauvegarde dans un fichier à part un extrait du média
     correspondant à l'intervalle de temps specifié. """
     if PRINT_STEPS:
-        print "  Extracting from {} to {} (s)...".format(start_time, end_time)
+        print "  Extracting from {} to {} (s) ...".\
+            format(start_time, end_time)
 
-    command = ("ffmpeg {silent} {force} -i {input} -ss {start} -c copy -to {end}"
+    command = ("ffmpeg {silent}{force}-i {input} -ss {start} -c copy -to {end}"
                " -f {format} {output}").\
         format(silent=FFMPEG_SILENT, force=FORCE_OVERWRITING,
-               input=filepath, start=start_time, end=end_time,
-               format=format, output=output_file)
+               input=ORIGIN_AUDIO_FILE, start=start_time, end=end_time,
+               format=FORMAT, output=output_file)
 
-    if(PRINT_COMMANDS):
-        print command
+    execute_command(command)
 
-    try:
-        subprocess.check_call(command.split())
-    except subprocess.CalledProcessError as e:
-        print('Exception caught: {}'.format(e))
-
-def extract_segments(filepath,folder,ext,segments_times):
-    """ Créer un dossier temporaire et y stocke les extraits. """
+def extract_segments(segments_times):
+    """ Récupère et sauvegarde les extraits dans le dossier temporaire """
     if PRINT_STEPS:
-        print "Extracting segments from '{}'...".format(filepath)
+        print "Extracting from '{}'...".format(OUTPUT_FILE_NAME)
 
-    # Supprime le dossier temporaire existant
-    if os.path.exists(folder):
-        shutil.rmtree(folder)
-    # Crée un nouveau dossier temporaire
-    if not os.path.exists(folder):
-        os.makedirs(folder)
+    for i, times in enumerate(segments_times):
+        output_file = "{folder}/{name}{id}.{ext}".\
+            format(folder=TEMP_DIR, name=EXTRACT_PREFIX, id=i, ext=FORMAT)
+        extract_segment(output_file, times['start'], times['end'])
 
-    number = 0
-    for times in segments_times:
-        output_file = folder + "/cut" + str(number) + "." + ext
-        extract_segment(filepath,output_file,ext,times[0],times[1])
-        number += 1
-    return number
-
-def concat_segments(folder,number,ext,output_file):
+def concat_segments(extracts_number):
     """ Fusionne les fichiers contenant les segments dans un seul fichier """
     if PRINT_STEPS:
-        print "Saving media summary into '{}'...".format(output_file)
+        print "Saving media summary into '{}'...".format(OUTPUT_FILE_NAME)
 
-    segments_list = folder + "_" + SEGMENTS_FILES_LIST
+    extracts_list = os.path.abspath("{}/{}".format(TEMP_DIR,EXTRACTS_LIST))
 
-    # Supprime le fichier contenant la liste des chemins vers les segments
-    if os.path.isfile(segments_list):
-        os.remove(segments_list)
+    extracts = ["file '{folder}/{name}{id}.{ext}'".\
+                    format(folder=os.path.abspath(TEMP_DIR),
+                           name=EXTRACT_PREFIX,
+                           id=i, ext=FORMAT)
+                 for i in range(0, extracts_number)]
 
-    segments = ["file '" + folder + "/cut" + str(i) + "." + ext\
-                for i in range(0, number)]
-
-    file = open(segments_list,"w")
-    file.write('\n'.join(segments))
+    file = open(extracts_list,"w")
+    file.write('\n'.join(extracts))
     file.close()
 
-    command = 'ffmpeg {silent} {force} -f concat -i {list} -c copy {output}'.\
+    command = 'ffmpeg {silent}{force}-f concat -safe 0 -i {file_list} -c copy {output}'.\
         format(silent=FFMPEG_SILENT,force=FORCE_OVERWRITING,
-               list=segments_list,output=output_file)
+               file_list=extracts_list,output=OUTPUT_FILE_NAME)
 
-    if(PRINT_COMMANDS):
-        print command
-
-    try:
-        subprocess.check_call(command.split())
-    except subprocess.CalledProcessError as e:
-        print('Exception caught: {}'.format(e))
-
-    if PRINT_STEPS:
+    if execute_command(command) and PRINT_STEPS:
         print "Saved!"
 
-def terminate(folder):
-    # Supprime le fichier contenant la liste des chemins vers les segments
-    if os.path.isfile(SEGMENTS_FILES_LIST):
-        os.remove(SEGMENTS_FILES_LIST)
+def ini():
+    # Supprime le dossier temporaire existant
+    if os.path.exists(TEMP_DIR):
+        shutil.rmtree(TEMP_DIR)
+    # Crée un nouveau dossier temporaire
+    if not os.path.exists(TEMP_DIR):
+        os.makedirs(TEMP_DIR)
 
-    # # Supprime le dossier temporaire
-    if os.path.exists(folder):
-        shutil.rmtree(folder)
+def terminate():
+    # Supprime le dossier temporaire
+    if os.path.exists(TEMP_DIR):
+        shutil.rmtree(TEMP_DIR)
 
-def main(filepath,segments_times):
+def main(segments_times):
     # Définition des variables
-    fileformat = os.path.splitext(filepath)[1][1:] # extension du fichier, sans le '.'
+    fileformat = os.path.splitext(ORIGIN_AUDIO_FILE)[1][1:] # extension du fichier, sans le '.'
     if fileformat:
-        filename   = os.path.basename(filepath).split("." + fileformat)[0]
+        filename   = os.path.basename(ORIGIN_AUDIO_FILE).split("." + fileformat)[0]
     else:
-        filename   = os.path.basename(filepath)
-        fileformat = DEFAULT_FORMAT
+        filename   = os.path.basename(ORIGIN_AUDIO_FILE)
+        fileformat = FORMAT
 
     global OUTPUT_FILE_NAME
+    global TEMP_DIR
 
     if OUTPUT_FILE_NAME:
         OUTPUT_FILE_NAME = "{filename}.{format}".\
-            format(filename=OUTPUT_FILE_NAME, format=DEFAULT_FORMAT)
+            format(filename=OUTPUT_FILE_NAME, format=FORMAT)
     else:
         OUTPUT_FILE_NAME = "{filename}{suffix}.{format}".\
             format(filename=filename, suffix=FINAL_FILE_SUFFIX, format=fileformat)
 
-    tmp_dir = TEMP_DIR_PREFIX + filename
+    TEMP_DIR = TEMP_DIR_PREFIX + filename
 
+    ini()
     segments_times = read_segments_times(segments_times)
 
     # Quitte si aucun segment n'est sélectionné
     if(len(segments_times) == 0):
-        printerror("No segment selected for {}!".format(filepath))
+        printerror("No segment selected for {}!".format(ORIGIN_AUDIO_FILE))
         sys.exit(1)
 
     # Extrait les segments
-    number = extract_segments(audio_filepath,tmp_dir,fileformat,segments_times)
+    extract_segments(segments_times)
 
-    if number == 1:
+    if len(segments_times) == 1:
         shutil.move("{folder}/{filename}0.{format}".\
-                        format(tmp_dir,EXTRACTS_NAME,fileformat),
+                        format(TEMP_DIR,EXTRACTS_NAME,fileformat),
                     OUTPUT_FILE_NAME)
     else:
-        concat_segments(tmp_dir,number,fileformat,OUTPUT_FILE_NAME)
+        concat_segments(len(segments_times))
 
-    terminate(tmp_dir)
+    terminate()
 
 
 if __name__ == "__main__":
@@ -207,7 +204,7 @@ if __name__ == "__main__":
                         help="Define output file name. Erase suffix name")
     parser.add_argument('-s', '--suffix',
                         help="Define the ouput file name's suffix")
-    parser.add_argument('--format',
+    parser.add_argument('--format', default=DEFAULT_FORMAT,
                         help="Define the ouput file format")
     args = vars(parser.parse_args())
 
@@ -221,7 +218,7 @@ if __name__ == "__main__":
         FFMPEG_SILENT = ""
 
     if args['force']:
-        FORCE_OVERWRITING="-y"
+        FORCE_OVERWRITING="-y "
 
     if args['name']:
         OUTPUT_FILE_NAME   = args['name']
@@ -233,7 +230,7 @@ if __name__ == "__main__":
         OUTPUT_FILE_SUFFIX = args['suffix']
 
     if args['format']:
-        DEFAULT_FORMAT = args['format']
+        FORMAT = args['format']
 
     ORIGIN_AUDIO_FILE = args['audio_file'].name
 
